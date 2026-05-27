@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: obd2-ai-backend
+    runtime: python
+    plan: starter          # upgrade to standard for production traffic
+
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+
+    healthCheckPath: /health
+
+    envVars:
+      # Set OPENAI_API_KEY via the Render dashboard → Environment tab.
+      # Mark it as a secret so it is never visible in logs.
+      - key: OPENAI_API_KEY
+        sync: false          # must be set manually in the dashboard
+
+      # Optional: override the model (default: gpt-4o)
+      - key: OPENAI_MODEL
+        value: gpt-4o
+
+      # Optional: resize long edge to this pixel count before sending to OpenAI
+      - key: MAX_IMAGE_PX
+        value: "1024"
+
+    autoDeploy: true         # redeploy on every push to the connected branch
