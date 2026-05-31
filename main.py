@@ -33,6 +33,8 @@ from openai import OpenAI, OpenAIError
 from PIL import Image
 
 import obd_database as db
+import firebase_admin_client as fb_admin
+from polar_payments import router as polar_router
 
 # ── Environment ────────────────────────────────────────────────────────────────
 
@@ -67,6 +69,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("obd2ai")
 log.info("OBD2 AI v5.0 starting. Models: %s | DB entries: %d", MODEL_LIST, db.db_size())
+fb_admin.init()
 
 # ── FastAPI ────────────────────────────────────────────────────────────────────
 
@@ -83,6 +86,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(polar_router)
 
 # ── PASS 1 — Code extraction prompt ───────────────────────────────────────────
 

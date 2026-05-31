@@ -1,26 +1,50 @@
-services:
-  - type: web
-    name: obd2-ai-backend
-    runtime: python
-    plan: starter          # upgrade to standard for production traffic
-
-    buildCommand: pip install --no-cache-dir -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
-
-    healthCheckPath: /health
-
-    envVars:
-      # Set OPENAI_API_KEY via the Render dashboard → Environment tab.
-      # Mark it as a secret so it is never visible in logs.
-      - key: OPENAI_API_KEY
-        sync: false          # must be set manually in the dashboard
-
-      # Optional: override the model (default: gpt-4o)
-      - key: OPENAI_MODEL
-        value: gpt-4o
-
-      # Optional: resize long edge to this pixel count before sending to OpenAI
-      - key: MAX_IMAGE_PX
-        value: "1024"
-
-    autoDeploy: true         # redeploy on every push to the connected branch
+services:
+  - type: web
+    name: obd2-ai-backend
+    runtime: python
+    plan: starter          # upgrade to standard for production traffic
+
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+
+    healthCheckPath: /health
+
+    envVars:
+      # Set OPENAI_API_KEY via the Render dashboard → Environment tab.
+      # Mark it as a secret so it is never visible in logs.
+      - key: OPENAI_API_KEY
+        sync: false          # must be set manually in the dashboard
+
+      # Optional: override the model (default: gpt-4o)
+      - key: OPENAI_MODEL
+        value: gpt-4o
+
+      # Optional: resize long edge to this pixel count before sending to OpenAI
+      - key: MAX_IMAGE_PX
+        value: "1024"
+
+      # Polar one-time payments (set secrets in Render dashboard)
+      - key: POLAR_ACCESS_TOKEN
+        sync: false
+      - key: POLAR_WEBHOOK_SECRET
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: FRONTEND_URL
+        value: https://obd2-ai-aec61.web.app
+
+      # Use "sandbox" for Polar sandbox testing, omit or "production" for live
+      - key: POLAR_SERVER
+        value: production
+
+      # Polar Product IDs (create matching one-time products in Polar dashboard)
+      - key: POLAR_PRODUCT_CREDITS_1
+        sync: false
+      - key: POLAR_PRODUCT_CREDITS_3
+        sync: false
+      - key: POLAR_PRODUCT_CREDITS_10
+        sync: false
+      - key: POLAR_PRODUCT_UNLIMITED
+        sync: false
+
+    autoDeploy: true         # redeploy on every push to the connected branch

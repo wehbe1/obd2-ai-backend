@@ -7,3 +7,5 @@ openai==2.38.0
 Pillow==12.2.0
 python-multipart==0.0.29
 python-dotenv==1.1.0
+polar-sdk>=0.22.0
+firebase-admin==6.7.0
