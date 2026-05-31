@@ -914,6 +914,108 @@ _DB: dict[str, dict[str, Any]] = {
     },
 }
 
+# ── Supplementary knowledge layers ──────────────────────────────────────────────
+#
+# Kept separate from the main _DB so the 90 base entries don't need editing.
+# enrich_detected_codes() merges these in automatically.
+
+# Subsystem (English) derived from the code family prefix.
+_SUBSYSTEM_BY_PREFIX = {
+    "P": "Powertrain (Engine / Transmission)",
+    "C": "Chassis (ABS / Brakes / Steering)",
+    "B": "Body (Airbag / SRS / Comfort)",
+    "U": "Network (CAN-Bus / Communication)",
+}
+
+# Symptoms a driver would actually notice, keyed by code.
+# Only the highest-traffic codes are listed; others fall back to a generic
+# symptom derived from severity so the field is never empty for known issues.
+_SYMPTOMS: dict[str, list[str]] = {
+    "P0300": ["רעידות במנוע", "אובדן כוח", "צריכת דלק גבוהה", "נורת מנוע מהבהבת"],
+    "P0301": ["רעד בסרק", "טרטור במנוע", "אובדן כוח קל", "נורת מנוע דולקת"],
+    "P0302": ["רעד בסרק", "טרטור במנוע", "אובדן כוח קל", "נורת מנוע דולקת"],
+    "P0303": ["רעד בסרק", "טרטור במנוע", "אובדן כוח קל", "נורת מנוע דולקת"],
+    "P0304": ["רעד בסרק", "טרטור במנוע", "אובדן כוח קל", "נורת מנוע דולקת"],
+    "P0171": ["סרק לא יציב", "היסוס בהאצה", "צריכת דלק גבוהה", "קושי בהתנעה"],
+    "P0172": ["ריח דלק", "עשן שחור מהאגזוז", "צריכת דלק גבוהה", "סרק גס"],
+    "P0420": ["נורת מנוע דולקת", "ירידה קלה בביצועים", "כשל בטסט פליטה"],
+    "P0430": ["נורת מנוע דולקת", "ירידה קלה בביצועים", "כשל בטסט פליטה"],
+    "P0442": ["נורת מנוע דולקת", "ריח דלק קל", "ללא השפעה על נסיעה"],
+    "P0455": ["נורת מנוע דולקת", "ריח דלק", "פקק דלק לא אטום"],
+    "P0128": ["מנוע לוקח זמן להתחמם", "חימום חלש בחורף", "צריכת דלק מעט גבוהה"],
+    "P0520": ["נורת לחץ שמן דולקת", "רעש מהמנוע", "סכנת נזק חמור למנוע"],
+    "P0521": ["נורת לחץ שמן", "רעשי מנוע", "סכנת נזק למנוע"],
+    "P0335": ["המנוע לא מתניע", "כיבוי פתאומי תוך כדי נסיעה", "התנעה לא סדירה"],
+    "P0700": ["החלפת הילוכים קשה", "נעילת גיר", "נורת גיר דולקת", "מצב חירום בגיר"],
+    "P0730": ["החלקה בהילוכים", "האצה ללא תגובה", "רעידות בהחלפת הילוך"],
+    "P0011": ["אובדן כוח", "סרק לא יציב", "צריכת שמן", "נורת מנוע"],
+    "P0087": ["אובדן כוח משמעותי", "כיבוי מנוע", "קושי בהתנעה", "גמגום בהאצה"],
+    "C0035": ["נורת ABS דולקת", "בלימה ללא ABS", "אזהרת בקרת יציבות"],
+    "C0110": ["נורת ABS דולקת", "אובדן תפקוד ABS", "בלימה ארוכה יותר"],
+    "B0001": ["נורת כרית אוויר דולקת", "כרית אוויר לא תפעל בתאונה"],
+    "U0100": ["נורות אזהרה מרובות", "המנוע לא מתניע", "אובדן תקשורת מחשב"],
+    "P2002": ["אובדן כוח", "עשן מהאגזוז", "מצב חירום מנוע (limp mode)"],
+    "P2263": ["אובדן כוח טורבו", "עשן", "רעש שריקה חריג"],
+}
+
+# Vehicle-specific intelligence scaffold.
+# Maps (manufacturer, model-substring) → list of known-issue notes (Hebrew).
+# Extend this over time; lookup is case-insensitive and substring-based.
+_MANUFACTURER_NOTES: dict[str, list[str]] = {
+    "renault": [
+        "רנו מגאן/קליאו: תקלות תקשורת BCM נפוצות — בדוק BCM לפני החלפת רכיבים.",
+        "רנו: בעיות סליל הצתה נפוצות בדגמי 1.2 TCe.",
+    ],
+    "peugeot": [
+        "פיג'ו/סיטרואן: שרשרת תזמון נמתחת במנועי 1.2 PureTech — בדוק עיתוי.",
+        "פיג'ו: תקלות AdBlue נפוצות בדיזל החדשים.",
+    ],
+    "citroen": [
+        "סיטרואן: מנועי 1.6 HDi — סתימות DPF נפוצות בנסיעות עירוניות קצרות.",
+    ],
+    "mazda": [
+        "מאזדה Skyactiv דיזל: בעיות DPF וסתימת שסתום EGR נפוצות.",
+    ],
+    "bmw": [
+        "ב.מ.וו: דליפות שמן ממכסה השסתומים ובית המסנן נפוצות.",
+        "ב.מ.וו N20/N47: מתיחת שרשרת תזמון — סימפטום קריטי.",
+    ],
+    "volkswagen": [
+        "פולקסווגן/אאודי TSI: צריכת שמן גבוהה וסתימת PCV נפוצות.",
+        "VW: סליל הצתה (coil pack) — כשל נפוץ בקודי הצתה.",
+    ],
+    "hyundai": [
+        "יונדאי/קיה: מנועי Theta II — תקלות מיסב גל ארכובה ידועות.",
+    ],
+    "kia": [
+        "קיה: מנועי Theta II — קצר ריתוח וצריכת שמן ידועים.",
+    ],
+    "toyota": [
+        "טויוטה: ברוב המקרים אמינות גבוהה — ודא תקלה אמיתית לפני החלפה יקרה.",
+    ],
+}
+
+
+def _risk_level(severity: str, safe_to_drive: str) -> str:
+    """Map severity + driveability to a normalized English risk level."""
+    if severity == "קריטי" or safe_to_drive == "stop_immediately":
+        return "critical"
+    if severity == "גבוה" or safe_to_drive == "drive_to_garage":
+        return "high"
+    if severity == "בינוני":
+        return "medium"
+    return "low"
+
+
+def _symptoms_for(code: str, db_entry: dict) -> list[str]:
+    """Return notable symptoms; fall back to a generic line for known codes."""
+    if code in _SYMPTOMS:
+        return _SYMPTOMS[code]
+    if db_entry:
+        return [f"סימפטומים אפשריים הקשורים ל{db_entry.get('system_he', 'מערכת')}"]
+    return []
+
+
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 # Regex to find OBD codes in arbitrary text
@@ -960,36 +1062,72 @@ def lookup(codes: list[str]) -> list[dict]:
     return results
 
 
-def build_context_block(entries: list[dict]) -> str:
+def manufacturer_notes(vehicle_info: dict | None) -> list[str]:
+    """
+    Return known-issue notes for a detected manufacturer.
+    *vehicle_info* may contain 'manufacturer' / 'model' (strings or 'not_visible').
+    Returns [] when nothing is known — never raises.
+    """
+    if not isinstance(vehicle_info, dict):
+        return []
+    maker = str(vehicle_info.get("manufacturer", "")).strip().lower()
+    if not maker or maker == "not_visible":
+        return []
+    for key, notes in _MANUFACTURER_NOTES.items():
+        if key in maker or maker in key:
+            return notes
+    return []
+
+
+def build_context_block(entries: list[dict], vehicle_info: dict | None = None) -> str:
     """
     Build a concise human-readable context block for injection into the AI prompt.
-    Each entry takes ~5 lines so a list of 10 codes stays under ~50 lines.
+    Includes per-code knowledge plus manufacturer-specific notes when available.
     """
-    if not entries:
-        return ""
-    lines = [
-        "══════════════════════════════════════════════",
-        "AUTHORITATIVE OBD CODE DATABASE",
-        "Use entries below as the PRIMARY technical source for detected codes.",
-        "══════════════════════════════════════════════",
-    ]
-    for e in entries:
+    lines: list[str] = []
+
+    if entries:
         lines += [
-            f"\n[{e['code']}] {e.get('title', 'Unknown')}",
-            f"  System   : {e.get('system_he', '')}",
-            f"  Severity : {e.get('severity', '')} | Drive: {e.get('safe_to_drive', '')}",
-            f"  Causes   : {' | '.join(e.get('causes_he', [])[:3])}",
-            f"  Actions  : {' | '.join(e.get('actions_he', [])[:3])}",
-            f"  Cost (₪) : {e.get('cost_range_ils', 'לא ידוע')}",
+            "══════════════════════════════════════════════",
+            "AUTHORITATIVE OBD CODE DATABASE",
+            "Use entries below as the PRIMARY technical source for detected codes.",
+            "Causes are listed in DESCENDING order of probability.",
+            "══════════════════════════════════════════════",
         ]
-    lines.append("══════════════════════════════════════════════")
+        for e in entries:
+            code = e.get("code", "")
+            db_entry = _DB.get(code, {})
+            lines += [
+                f"\n[{code}] {e.get('title', 'Unknown')}",
+                f"  Subsystem : {_SUBSYSTEM_BY_PREFIX.get(code[:1], 'Unknown')}",
+                f"  System    : {e.get('system_he', '')}",
+                f"  Severity  : {e.get('severity', '')} | Drive: {e.get('safe_to_drive', '')}",
+                f"  Causes    : {' | '.join(e.get('causes_he', [])[:4])}",
+                f"  Symptoms  : {' | '.join(_symptoms_for(code, db_entry)[:4])}",
+                f"  Actions   : {' | '.join(e.get('actions_he', [])[:3])}",
+                f"  Cost (₪)  : {e.get('cost_range_ils', 'לא ידוע')}",
+            ]
+        lines.append("══════════════════════════════════════════════")
+
+    notes = manufacturer_notes(vehicle_info)
+    if notes:
+        lines += [
+            "\n══════════════════════════════════════════════",
+            "MANUFACTURER-SPECIFIC INTELLIGENCE",
+            "Weight these known-issue patterns into your root-cause ranking.",
+            "══════════════════════════════════════════════",
+        ]
+        lines += [f"  • {n}" for n in notes]
+        lines.append("══════════════════════════════════════════════")
+
     return "\n".join(lines)
 
 
 def enrich_detected_codes(ai_codes: list[dict]) -> list[dict]:
     """
     Merge AI-generated OBD code entries with database knowledge.
-    AI descriptions are kept; database fields are added / used as fallback.
+    Adds subsystem, symptoms, risk_level and a match_confidence score
+    (1.0 when the code is in the DB, lower when AI-only).
     """
     enriched = []
     for item in ai_codes:
@@ -997,15 +1135,24 @@ def enrich_detected_codes(ai_codes: list[dict]) -> list[dict]:
             continue
         code = item.get("code", "").strip().upper()
         db_entry = _DB.get(code, {})
+        in_db = bool(db_entry)
+        severity = item.get("severity") or db_entry.get("severity", "בינוני")
+        safe = db_entry.get("safe_to_drive", "")
+        cost = db_entry.get("cost_range_ils", "")
         enriched.append({
-            "code":               code,
-            "description":        item.get("description", db_entry.get("system_he", "")),
-            "severity":           item.get("severity")  or db_entry.get("severity", "בינוני"),
-            "title":              db_entry.get("title", ""),
-            "common_causes":      db_entry.get("causes_he", []),
-            "recommended_actions":db_entry.get("actions_he", []),
-            "cost_range":         db_entry.get("cost_range_ils", "") + " ₪" if db_entry.get("cost_range_ils") else "",
-            "safe_to_drive":      db_entry.get("safe_to_drive", ""),
+            "code":                code,
+            "description":         item.get("description", db_entry.get("system_he", "")),
+            "severity":            severity,
+            "title":               db_entry.get("title", ""),
+            "subsystem":           _SUBSYSTEM_BY_PREFIX.get(code[:1], ""),
+            "common_causes":       db_entry.get("causes_he", []),
+            "symptoms":            _symptoms_for(code, db_entry),
+            "recommended_actions": db_entry.get("actions_he", []),
+            "cost_range":          (cost + " ₪") if cost and cost != "לא ידוע" else "",
+            "safe_to_drive":       safe,
+            "risk_level":          _risk_level(severity, safe),
+            # High confidence when verified against the DB, lower for AI-only codes.
+            "match_confidence":    0.97 if in_db else 0.6,
         })
     return enriched
 

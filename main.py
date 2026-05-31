@@ -66,14 +66,14 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 log = logging.getLogger("obd2ai")
-log.info("OBD2 AI v4.0 starting. Models: %s | DB entries: %d", MODEL_LIST, db.db_size())
+log.info("OBD2 AI v5.0 starting. Models: %s | DB entries: %d", MODEL_LIST, db.db_size())
 
 # ── FastAPI ────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
     title="OBD2 AI Backend",
-    description="Professional Automotive Diagnostic Platform — v4.0",
-    version="4.0.0",
+    description="Professional Automotive Diagnostic Platform — v5.0",
+    version="5.0.0",
 )
 
 app.add_middleware(
@@ -93,10 +93,13 @@ _EXTRACTION_SYSTEM = (
 )
 
 _EXTRACTION_PROMPT = (
-    'List ALL OBD/DTC diagnostic codes visible in this image '
-    '(each code is one letter followed by 4 digits, e.g. P0420, C0031, B0001, U0100). '
-    'Return ONLY this JSON: {"codes": ["P0420", "C0031"]}\n'
-    'If no codes are visible, return: {"codes": []}'
+    'Extract two things from this vehicle image:\n'
+    '1. ALL OBD/DTC diagnostic codes visible (one letter + 4 digits, '
+    'e.g. P0420, C0031, B0001, U0100).\n'
+    '2. The vehicle manufacturer, if a logo or name is clearly visible.\n'
+    'Return ONLY this JSON: '
+    '{"codes": ["P0420", "C0031"], "manufacturer": "Renault"}\n'
+    'If no codes are visible use []. If manufacturer is unknown use "not_visible".'
 )
 
 # ── PASS 2 — Full diagnostic system prompt ────────────────────────────────────
@@ -106,22 +109,36 @@ You are a senior automotive diagnostic technician with 20+ years of hands-on
 workshop experience. You hold ASE Master Technician certification and have worked
 with European, Asian and American vehicles.
 
-Your job is to perform a thorough, professional visual inspection of the uploaded
-vehicle image and produce a comprehensive diagnostic report.
+You perform a rigorous TEN-LAYER diagnostic analysis:
+  Layer 1  Raw text extraction (OCR)
+  Layer 2  OBD/DTC code recognition
+  Layer 3  Dashboard warning-light recognition
+  Layer 4  Vehicle-state analysis (RPM, speed, temp, fuel, battery, odometer, gear)
+  Layer 5  Root-cause estimation (RANKED by probability)
+  Layer 6  Repair recommendation
+  Layer 7  Risk assessment
+  Layer 8  Cost estimation (Israel, NIS)
+  Layer 9  Driveability assessment
+  Layer 10 Safety assessment
 
 ABSOLUTE RULES:
 1. Return ONLY valid JSON. No prose, no markdown, no code fences.
-2. NEVER hallucinate. If a value is not clearly visible write exactly: "not_visible"
+2. NEVER GUESS. If a value is not clearly visible write exactly: "not_visible".
+   When uncertain, LOWER the relevant confidence score and explain why in 'uncertainty'.
 3. All narrative/explanation fields MUST be written in Hebrew (עברית).
 4. OBD code format: one letter + 4 digits (P0420, C0031, B0001, U0100).
 5. severity must be EXACTLY one of: קריטי | גבוה | בינוני | נמוך
 6. safety_recommendation must be EXACTLY one of:
      stop_immediately | drive_to_garage | safe_to_drive
-7. repair_urgency must be EXACTLY one of:
+7. driveability must be EXACTLY one of: safe | caution | stop
+8. repair_urgency must be EXACTLY one of:
      immediate | within_24h | within_week | routine | not_required
-8. confidence: decimal 0.0–1.0 (your honest certainty).
-9. If the image is unclear, still try your best and report uncertainty honestly.
-10. Write like a professional speaking to a worried car owner — clear, direct, no panic.
+9. EVERY confidence value is a decimal 0.0–1.0 reflecting your HONEST certainty.
+10. ranked_causes MUST be ordered most-likely-first, with probabilities that
+    sum to approximately 1.0. Use vehicle-state correlations
+    (e.g. high RPM + transmission warning → raise transmission probability).
+11. Write like a senior technician talking to a customer: specific, actionable,
+    no generic filler, and DO NOT simply repeat the OCR text back.
 """
 
 # ── PASS 2 — Full diagnostic user prompt template ─────────────────────────────
@@ -182,18 +199,34 @@ REQUIRED JSON OUTPUT — Return EXACTLY this structure:
   "mechanic_explanation": "Professional Hebrew explanation at senior-technician level: affected systems, likely root cause, diagnostic workflow, tests to confirm.",
   "severity": "קריטי | גבוה | בינוני | נמוך",
   "safety_recommendation": "stop_immediately | drive_to_garage | safe_to_drive",
+  "driveability": "safe | caution | stop",
   "repair_urgency": "immediate | within_24h | within_week | routine | not_required",
   "can_drive": "'כן' or 'לא' followed by a brief Hebrew explanation",
   "need_garage": "'כן' or 'לא' followed by a brief Hebrew explanation",
   "emergency": "'כן' or 'לא'",
   "confidence": 0.92,
-  "uncertainty": "Empty string '' if image is clear and analysis is confident. Otherwise briefly describe image quality issues in Hebrew.",
+  "confidence_scores": {{
+    "warning_lights": 0.95,
+    "obd_codes": 0.98,
+    "vehicle_state": 0.90,
+    "root_cause": 0.87,
+    "cost_estimate": 0.72,
+    "overall": 0.90
+  }},
+  "uncertainty": "Empty string '' if image is clear and analysis is confident. Otherwise briefly describe in Hebrew WHY you are uncertain (blur, glare, partial view).",
+  "vehicle_info": {{
+    "manufacturer": "Manufacturer if identifiable from logo/text e.g. 'Renault' or 'not_visible'",
+    "model": "Model if visible or 'not_visible'",
+    "year": "Year if visible or 'not_visible'",
+    "engine": "Engine info if visible or 'not_visible'"
+  }},
   "detected_warning_lights": [
     {{
       "name": "Hebrew name of warning light (e.g. 'בדוק מנוע', 'לחץ שמן נמוך', 'ABS')",
       "color": "red | orange | yellow | blue | green | white",
       "severity": "קריטי | גבוה | בינוני | נמוך",
-      "description": "Hebrew: what this light means technically and why it activates"
+      "description": "Hebrew: what this light means technically and why it activates",
+      "immediate_action": "Hebrew: the single most important action for this light right now"
     }}
   ],
   "detected_dashboard_text": "All readable text verbatim. Preserve original language.",
@@ -213,6 +246,12 @@ REQUIRED JSON OUTPUT — Return EXACTLY this structure:
     "odometer": "Odometer reading e.g. '87,432 km' or 'not_visible'",
     "gear_position": "Gear position e.g. 'D', 'P', 'N', '3', 'מנוע כבוי' or 'not_visible'"
   }},
+  "ranked_causes": [
+    {{"cause": "Most likely root cause in Hebrew", "probability": 0.72}},
+    {{"cause": "Second cause in Hebrew", "probability": 0.18}},
+    {{"cause": "Third cause in Hebrew", "probability": 0.07}},
+    {{"cause": "Fourth cause in Hebrew", "probability": 0.03}}
+  ],
   "possible_causes": [
     "Most likely cause in Hebrew",
     "Second most likely cause in Hebrew",
@@ -232,12 +271,20 @@ REQUIRED JSON OUTPUT — Return EXACTLY this structure:
 FINAL RULES:
 • detected_warning_lights: [] if no warning lights visible — do NOT guess.
 • detected_obd_codes: [] if no codes visible — do NOT invent codes.
-• possible_obd_codes = flat string list extracted from detected_obd_codes.
+• ranked_causes: ordered most-likely-first; probabilities sum to ≈1.0.
+  Correlate with vehicle_state (e.g. high coolant temp + מנוע light → raise
+  cooling-system probability). If you cannot rank, give ONE cause at probability 1.0.
+• possible_causes = the 'cause' strings from ranked_causes (without probabilities).
+• confidence_scores: set each layer's confidence honestly and independently.
+  A blurry image lowers warning_lights/obd_codes; a clear scanner raises obd_codes.
+• driveability: 'stop' if dangerous, 'caution' if drive carefully to garage,
+  'safe' if no safety concern. Must agree with safety_recommendation.
+• possible_obd_codes = flat string list from detected_obd_codes.
 • actions = same content as recommended_steps.
 • detected_text = same as detected_dashboard_text.
 • If no problems detected: severity='נמוך', safety_recommendation='safe_to_drive',
-  repair_urgency='not_required', emergency='לא'.
-• Prioritise the database context entries above when explaining detected codes.
+  driveability='safe', repair_urgency='not_required', emergency='לא'.
+• Prioritise the database + manufacturer context above when ranking causes.
 • Be specific — name the exact component, not just "system malfunction".
 """
 
@@ -311,11 +358,11 @@ def _call_model(messages: list[dict], max_tokens: int = 400,
 
 # ── Pass 1: Code extraction ────────────────────────────────────────────────────
 
-def _pass1_extract_codes(b64: str) -> list[str]:
+def _pass1_extract_codes(b64: str) -> tuple[list[str], str]:
     """
-    Quick pass to extract visible OBD codes from the image.
-    Returns a list of uppercase code strings like ['P0420', 'C0031'].
-    Falls back to empty list on any error — never blocks Pass 2.
+    Quick pass to extract visible OBD codes + manufacturer from the image.
+    Returns (codes, manufacturer). Falls back to ([], 'not_visible') on any
+    error — never blocks Pass 2.
     """
     try:
         messages = [
@@ -335,11 +382,14 @@ def _pass1_extract_codes(b64: str) -> list[str]:
         parsed = _extract_json(text)
         raw_codes = parsed.get("codes", [])
         codes = [c.strip().upper() for c in raw_codes if isinstance(c, str) and c.strip()]
-        log.info("Pass 1 extracted codes: %s", codes)
-        return codes
+        manufacturer = parsed.get("manufacturer", "not_visible")
+        if not isinstance(manufacturer, str) or not manufacturer.strip():
+            manufacturer = "not_visible"
+        log.info("Pass 1 → codes=%s manufacturer=%s", codes, manufacturer)
+        return codes, manufacturer
     except Exception as exc:
         log.warning("Pass 1 extraction failed (non-fatal): %s", exc)
-        return []
+        return [], "not_visible"
 
 
 # ── Pass 2: Full diagnosis ─────────────────────────────────────────────────────
@@ -416,6 +466,15 @@ def _safe_defaults(result: dict[str, Any]) -> dict[str, Any]:
         "gear_position": "not_visible",
     })
 
+    # v5 fields — confidence engine, ranked causes, driveability, vehicle info
+    _str("driveability", "safe")
+    _list("ranked_causes")
+    _dict_f("confidence_scores", {})
+    _dict_f("vehicle_info", {
+        "manufacturer": "not_visible", "model": "not_visible",
+        "year": "not_visible", "engine": "not_visible",
+    })
+
     # Cross-field sync
     if result["recommended_steps"] and not result["actions"]:
         result["actions"] = result["recommended_steps"]
@@ -464,11 +523,56 @@ def _safe_defaults(result: dict[str, Any]) -> dict[str, Any]:
         else:
             result["repair_urgency"] = "routine"
 
+    # Validate / derive driveability (3-tier) from safety_recommendation
+    valid_drive = {"safe", "caution", "stop"}
+    if result["driveability"] not in valid_drive:
+        rec = result["safety_recommendation"]
+        result["driveability"] = {
+            "stop_immediately": "stop",
+            "drive_to_garage":  "caution",
+            "safe_to_drive":    "safe",
+        }.get(rec, "safe")
+
     # Clamp confidence
     try:
         result["confidence"] = max(0.0, min(1.0, float(result["confidence"])))
     except (TypeError, ValueError):
         result["confidence"] = 0.7
+
+    # ── Confidence engine — guarantee all six scores, clamped 0.0–1.0 ─────────
+    cs = result["confidence_scores"]
+    if not isinstance(cs, dict):
+        cs = {}
+    for key in ("warning_lights", "obd_codes", "vehicle_state",
+                "root_cause", "cost_estimate", "overall"):
+        try:
+            cs[key] = max(0.0, min(1.0, float(cs.get(key, result["confidence"]))))
+        except (TypeError, ValueError):
+            cs[key] = result["confidence"]
+    result["confidence_scores"] = cs
+
+    # ── Ranked causes — normalise to [{cause, probability}] ───────────────────
+    ranked: list[dict] = []
+    for item in result["ranked_causes"]:
+        if isinstance(item, dict) and item.get("cause"):
+            try:
+                prob = max(0.0, min(1.0, float(item.get("probability", 0.0))))
+            except (TypeError, ValueError):
+                prob = 0.0
+            ranked.append({"cause": str(item["cause"]), "probability": prob})
+        elif isinstance(item, str) and item.strip():
+            ranked.append({"cause": item.strip(), "probability": 0.0})
+    result["ranked_causes"] = ranked
+
+    # Derive flat possible_causes from ranked_causes when AI omitted it
+    if ranked and not result["possible_causes"]:
+        result["possible_causes"] = [r["cause"] for r in ranked]
+
+    # ── Vehicle info — ensure all four string keys ────────────────────────────
+    vi = result["vehicle_info"]
+    for k in ("manufacturer", "model", "year", "engine"):
+        if k not in vi or not isinstance(vi[k], str) or not vi[k].strip():
+            vi[k] = "not_visible"
 
     # Ensure vehicle state values are strings; fill in missing new fields
     vs = result["detected_vehicle_state"]
@@ -488,12 +592,21 @@ def _fallback_response(raw_text: str = "") -> dict[str, Any]:
         "mechanic_explanation": "Analysis failed — raw model output attached for debugging.",
         "severity": "נמוך",
         "safety_recommendation": "safe_to_drive",
+        "driveability": "safe",
         "repair_urgency": "not_required",
         "can_drive": "לא ידוע",
         "need_garage": "לא ידוע",
         "emergency": "לא",
         "confidence": 0.1,
+        "confidence_scores": {
+            "warning_lights": 0.1, "obd_codes": 0.1, "vehicle_state": 0.1,
+            "root_cause": 0.1, "cost_estimate": 0.1, "overall": 0.1,
+        },
         "uncertainty": "לא ניתן לנתח את התמונה כראוי",
+        "vehicle_info": {
+            "manufacturer": "not_visible", "model": "not_visible",
+            "year": "not_visible", "engine": "not_visible",
+        },
         "detected_warning_lights": [],
         "detected_dashboard_text": "",
         "detected_obd_codes": [],
@@ -502,6 +615,7 @@ def _fallback_response(raw_text: str = "") -> dict[str, Any]:
             "fuel": "not_visible", "battery": "not_visible",
             "odometer": "not_visible", "gear_position": "not_visible",
         },
+        "ranked_causes": [],
         "recommended_steps": ["נסה להעלות תמונה ברורה יותר של לוח המחוונים"],
         "possible_causes": ["תמונה לא ברורה או אינה מציגה לוח מחוונים"],
         "estimated_cost": "לא ידוע",
@@ -516,7 +630,7 @@ def _fallback_response(raw_text: str = "") -> dict[str, Any]:
 @app.get("/")
 def root() -> dict[str, Any]:
     return {
-        "message": "OBD2 AI Backend v4.0 — Professional Diagnostic Platform",
+        "message": "OBD2 AI Backend v5.0 — Professional Diagnostic Platform",
         "model_priority": MODEL_LIST,
         "obd_db_size": db.db_size(),
         "max_image_px": MAX_IMAGE_PX,
@@ -525,7 +639,7 @@ def root() -> dict[str, Any]:
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"status": "ok", "version": "4.0.0", "models": MODEL_LIST,
+    return {"status": "ok", "version": "5.0.0", "models": MODEL_LIST,
             "obd_db_size": db.db_size()}
 
 
@@ -556,15 +670,17 @@ async def upload_image(file: UploadFile = File(...)) -> dict[str, Any]:
         log.error("Image processing error: %s", exc)
         raise HTTPException(status_code=422, detail="Invalid or unsupported image") from exc
 
-    # 3. Pass 1 — extract OBD codes (non-blocking: errors ignored)
-    extracted_codes = _pass1_extract_codes(b64)
+    # 3. Pass 1 — extract OBD codes + manufacturer (non-blocking: errors ignored)
+    extracted_codes, pass1_manufacturer = _pass1_extract_codes(b64)
+    vehicle_hint = {"manufacturer": pass1_manufacturer}
 
-    # 4. DB lookup — build context block for Pass 2
-    db_entries   = db.lookup(extracted_codes) if extracted_codes else []
-    db_context   = db.build_context_block(db_entries) if db_entries else (
-        "No OBD codes were detected in Pass 1 — perform visual inspection only."
-    )
-    log.info("DB context built for codes: %s", extracted_codes)
+    # 4. DB lookup + manufacturer notes — build context block for Pass 2
+    db_entries = db.lookup(extracted_codes) if extracted_codes else []
+    db_context = db.build_context_block(db_entries, vehicle_hint)
+    if not db_context:
+        db_context = "No OBD codes detected in Pass 1 — perform full visual inspection."
+    log.info("DB context built | codes=%s manufacturer=%s",
+             extracted_codes, pass1_manufacturer)
 
     # 5. Pass 2 — full diagnosis with DB context
     try:
@@ -589,15 +705,27 @@ async def upload_image(file: UploadFile = File(...)) -> dict[str, Any]:
             result["detected_obd_codes"]
         )
 
+    # 7b. Seed manufacturer from Pass 1 if Pass 2 didn't identify it
+    if pass1_manufacturer and pass1_manufacturer != "not_visible":
+        vi = result.get("vehicle_info")
+        if not isinstance(vi, dict):
+            vi = {}
+        if not vi.get("manufacturer") or vi.get("manufacturer") == "not_visible":
+            vi["manufacturer"] = pass1_manufacturer
+        result["vehicle_info"] = vi
+
     # 8. Normalise all fields
     result = _safe_defaults(result)
 
     log.info(
-        "Analysis complete | severity=%s safety=%s urgency=%s confidence=%.2f "
-        "lights=%d codes=%d",
-        result["severity"], result["safety_recommendation"], result["repair_urgency"],
-        result["confidence"], len(result["detected_warning_lights"]),
+        "Analysis complete | severity=%s drive=%s urgency=%s overall_conf=%.2f "
+        "lights=%d codes=%d ranked=%d maker=%s",
+        result["severity"], result["driveability"], result["repair_urgency"],
+        result["confidence_scores"]["overall"],
+        len(result["detected_warning_lights"]),
         len(result["detected_obd_codes"]),
+        len(result["ranked_causes"]),
+        result["vehicle_info"]["manufacturer"],
     )
 
     return result
